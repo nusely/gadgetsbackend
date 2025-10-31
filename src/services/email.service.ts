@@ -1,0 +1,316 @@
+import nodemailer from 'nodemailer';
+import fs from 'fs';
+import path from 'path';
+
+interface EmailOptions {
+  to: string;
+  subject: string;
+  html: string;
+  attachments?: Array<{
+    filename: string;
+    content: Buffer;
+    contentType: string;
+  }>;
+}
+
+class EmailService {
+  private transporter: nodemailer.Transporter;
+
+  constructor() {
+    const port = parseInt(process.env.SMTP_PORT || '587');
+    const secure = (process.env.SMTP_SECURE || '').toLowerCase() === 'true' || port === 465;
+
+    this.transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      port,
+      secure,
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+      // Improve stability to avoid "Unexpected socket close"
+      pool: true,
+      maxConnections: 5,
+      maxMessages: 100,
+      connectionTimeout: 20_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 20_000,
+      tls: {
+        rejectUnauthorized: false,
+      },
+    });
+  }
+
+  async sendEmail(options: EmailOptions): Promise<boolean> {
+    try {
+      const mailOptions = {
+        from: process.env.SMTP_FROM || `"VENTECH Gadgets" <${process.env.SMTP_USER}>`,
+        to: options.to,
+        subject: options.subject,
+        html: options.html,
+        attachments: options.attachments,
+      };
+
+      const result = await this.transporter.sendMail(mailOptions);
+      console.log('Email sent successfully:', result.messageId);
+      return true;
+    } catch (error) {
+      console.error('Error sending email:', error);
+      return false;
+    }
+  }
+
+  // Order confirmation email
+  async sendOrderConfirmation(orderData: any): Promise<boolean> {
+    const templatePath = path.join(__dirname, '../../email-templates/order-confirmation.html');
+    let template = fs.readFileSync(templatePath, 'utf8');
+
+    // Replace placeholders with actual data
+    template = template
+      .replace('{{ORDER_NUMBER}}', orderData.order_number)
+      .replace('{{CUSTOMER_NAME}}', orderData.customer_name)
+      .replace('{{ORDER_DATE}}', new Date(orderData.created_at).toLocaleDateString())
+      .replace('{{TOTAL_AMOUNT}}', `GHS ${orderData.total.toFixed(2)}`)
+      .replace('{{DELIVERY_ADDRESS}}', this.formatAddress(orderData.delivery_address))
+      .replace('{{ITEMS_LIST}}', this.formatOrderItems(orderData.items));
+
+    return this.sendEmail({
+      to: orderData.customer_email,
+      subject: `Order Confirmation - ${orderData.order_number}`,
+      html: template,
+    });
+  }
+
+  // Order status update email
+  async sendOrderStatusUpdate(orderData: any, newStatus: string): Promise<boolean> {
+    const templatePath = path.join(__dirname, '../../email-templates/order-status-update.html');
+    let template = fs.readFileSync(templatePath, 'utf8');
+
+    template = template
+      .replace('{{ORDER_NUMBER}}', orderData.order_number)
+      .replace('{{CUSTOMER_NAME}}', orderData.customer_name)
+      .replace('{{NEW_STATUS}}', newStatus)
+      .replace('{{STATUS_MESSAGE}}', this.getStatusMessage(newStatus))
+      .replace('{{TRACKING_NUMBER}}', orderData.tracking_number || 'Not available yet');
+
+    return this.sendEmail({
+      to: orderData.customer_email,
+      subject: `Order Update - ${orderData.order_number}`,
+      html: template,
+    });
+  }
+
+  // Order cancellation email
+  async sendOrderCancellation(orderData: any): Promise<boolean> {
+    const templatePath = path.join(__dirname, '../../email-templates/order-cancellation.html');
+    let template = fs.readFileSync(templatePath, 'utf8');
+
+    template = template
+      .replace('{{ORDER_NUMBER}}', orderData.order_number)
+      .replace('{{CUSTOMER_NAME}}', orderData.customer_name)
+      .replace('{{CANCELLATION_REASON}}', orderData.cancellation_reason || 'No reason provided');
+
+    return this.sendEmail({
+      to: orderData.customer_email,
+      subject: `Order Cancelled - ${orderData.order_number}`,
+      html: template,
+    });
+  }
+
+  // Wishlist reminder email
+  async sendWishlistReminder(userData: any, wishlistItems: any[]): Promise<boolean> {
+    const templatePath = path.join(__dirname, '../../email-templates/wishlist-reminder.html');
+    let template = fs.readFileSync(templatePath, 'utf8');
+
+    template = template
+      .replace('{{CUSTOMER_NAME}}', userData.first_name || 'Customer')
+      .replace('{{WISHLIST_ITEMS}}', this.formatWishlistItems(wishlistItems));
+
+    return this.sendEmail({
+      to: userData.email,
+      subject: 'Your Wishlist Items Are Waiting!',
+      html: template,
+    });
+  }
+
+  // Cart abandonment email
+  async sendCartAbandonmentReminder(userData: any, cartItems: any[]): Promise<boolean> {
+    const templatePath = path.join(__dirname, '../../email-templates/cart-abandonment.html');
+    let template = fs.readFileSync(templatePath, 'utf8');
+
+    template = template
+      .replace('{{CUSTOMER_NAME}}', userData.first_name || 'Customer')
+      .replace('{{CART_ITEMS}}', this.formatCartItems(cartItems));
+
+    return this.sendEmail({
+      to: userData.email,
+      subject: 'Don\'t forget your items!',
+      html: template,
+    });
+  }
+
+  // Investment email
+  async sendInvestmentEmail(investmentData: any): Promise<{ success: boolean; error?: string }> {
+    try {
+      const { fullName, email, phone, tier, amount, plan, message } = investmentData;
+      
+      const html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>New Investment Request - VENTECH</title>
+        </head>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+          <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+            <h2 style="color: #FF7A19;">New Investment Request - VENTECH Laptop Banking</h2>
+            
+            <div style="background-color: #f9f9f9; padding: 20px; border-radius: 8px; margin: 20px 0;">
+              <h3 style="margin-top: 0;">Investment Details</h3>
+              <p><strong>Name:</strong> ${fullName}</p>
+              <p><strong>Email:</strong> ${email}</p>
+              <p><strong>Phone:</strong> ${phone}</p>
+              <p><strong>Tier:</strong> ${tier}</p>
+              <p><strong>Amount:</strong> GHS ${amount}</p>
+              <p><strong>Plan:</strong> ${plan}</p>
+              ${message ? `<p><strong>Message:</strong> ${message}</p>` : ''}
+            </div>
+            
+            <p>This investment request was submitted through the VENTECH website.</p>
+            
+            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; font-size: 12px; color: #666;">
+              <p>VENTECH Gadgets - Your Trusted Tech Partner</p>
+              <p>Email: ventechgadgets@gmail.com | Phone: +233 55 134 4310</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+
+      const success = await this.sendEmail({
+        to: 'ventechgadgets@gmail.com',
+        subject: `New Investment Request - ${fullName}`,
+        html: html,
+      });
+
+      return { success };
+    } catch (error) {
+      console.error('Error sending investment email:', error);
+      return { success: false, error: 'Failed to send investment email' };
+    }
+  }
+
+  // Contact form email
+  async sendContactEmail(contactData: any): Promise<{ success: boolean; error?: string }> {
+    try {
+      const { name, email, phone, subject, message } = contactData;
+      
+      const html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>New Contact Form Submission - VENTECH</title>
+        </head>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+          <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+            <h2 style="color: #FF7A19;">New Contact Form Submission</h2>
+            
+            <div style="background-color: #f9f9f9; padding: 20px; border-radius: 8px; margin: 20px 0;">
+              <h3 style="margin-top: 0;">Contact Details</h3>
+              <p><strong>Name:</strong> ${name}</p>
+              <p><strong>Email:</strong> ${email}</p>
+              ${phone ? `<p><strong>Phone:</strong> ${phone}</p>` : ''}
+              <p><strong>Subject:</strong> ${subject}</p>
+              <p><strong>Message:</strong></p>
+              <div style="background-color: white; padding: 15px; border-radius: 4px; border-left: 4px solid #FF7A19;">
+                ${message.replace(/\n/g, '<br>')}
+              </div>
+            </div>
+            
+            <p>This message was submitted through the VENTECH contact form.</p>
+            
+            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; font-size: 12px; color: #666;">
+              <p>VENTECH Gadgets - Your Trusted Tech Partner</p>
+              <p>Email: ventechgadgets@gmail.com | Phone: +233 55 134 4310</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+
+      const success = await this.sendEmail({
+        to: 'ventechgadgets@gmail.com',
+        subject: `Contact Form: ${subject} - ${name}`,
+        html: html,
+      });
+
+      return { success };
+    } catch (error) {
+      console.error('Error sending contact email:', error);
+      return { success: false, error: 'Failed to send contact email' };
+    }
+  }
+
+  // Helper methods
+  private formatAddress(address: any): string {
+    if (typeof address === 'string') return address;
+    return `${address.street}, ${address.city}, ${address.region} ${address.postal_code}`;
+  }
+
+  private formatOrderItems(items: any[]): string {
+    return items.map(item => `
+      <tr>
+        <td style="padding: 10px; border-bottom: 1px solid #eee;">
+          <img src="${item.product_image}" alt="${item.product_name}" style="width: 50px; height: 50px; object-fit: cover; border-radius: 4px;">
+        </td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee;">${item.product_name}</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee;">${item.quantity}</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee;">GHS ${item.unit_price.toFixed(2)}</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee;">GHS ${item.subtotal.toFixed(2)}</td>
+      </tr>
+    `).join('');
+  }
+
+  private formatWishlistItems(items: any[]): string {
+    return items.map(item => `
+      <div style="display: flex; align-items: center; padding: 15px; border: 1px solid #eee; border-radius: 8px; margin-bottom: 10px;">
+        <img src="${item.product.image_url}" alt="${item.product.name}" style="width: 60px; height: 60px; object-fit: cover; border-radius: 4px; margin-right: 15px;">
+        <div>
+          <h4 style="margin: 0 0 5px 0; color: #1A1A1A;">${item.product.name}</h4>
+          <p style="margin: 0; color: #FF7A19; font-weight: bold;">GHS ${item.product.original_price.toFixed(2)}</p>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  private formatCartItems(items: any[]): string {
+    return items.map(item => `
+      <div style="display: flex; align-items: center; padding: 15px; border: 1px solid #eee; border-radius: 8px; margin-bottom: 10px;">
+        <img src="${item.image_url}" alt="${item.name}" style="width: 60px; height: 60px; object-fit: cover; border-radius: 4px; margin-right: 15px;">
+        <div>
+          <h4 style="margin: 0 0 5px 0; color: #1A1A1A;">${item.name}</h4>
+          <p style="margin: 0; color: #FF7A19; font-weight: bold;">GHS ${(item.discount_price || item.original_price).toFixed(2)}</p>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  private getStatusMessage(status: string): string {
+    const messages: { [key: string]: string } = {
+      'processing': 'Your order is being prepared for shipment.',
+      'shipped': 'Your order has been shipped and is on its way!',
+      'delivered': 'Your order has been delivered successfully.',
+      'cancelled': 'Your order has been cancelled.',
+    };
+    return messages[status] || 'Your order status has been updated.';
+  }
+}
+
+const emailService = new EmailService();
+
+// Export individual functions for specific use cases
+export const sendInvestmentEmail = emailService.sendInvestmentEmail.bind(emailService);
+export const sendContactEmail = emailService.sendContactEmail.bind(emailService);
+
+export default emailService;
