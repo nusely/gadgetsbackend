@@ -1,6 +1,6 @@
 import { Resend } from 'resend';
 import fs from 'fs';
-import path from 'path';
+import { resolveTemplatePath } from '../utils/templatePath';
 
 interface EmailOptions {
   to: string;
@@ -73,7 +73,7 @@ class EmailService {
 
   // Order confirmation email
   async sendOrderConfirmation(orderData: any): Promise<boolean> {
-    const templatePath = path.join(__dirname, '../../email-templates/order-confirmation.html');
+    const templatePath = resolveTemplatePath('order-confirmation.html');
     let template = fs.readFileSync(templatePath, 'utf8');
 
     // Replace placeholders with actual data
@@ -95,7 +95,7 @@ class EmailService {
 
   // Order status update email
   async sendOrderStatusUpdate(orderData: any, newStatus: string): Promise<boolean> {
-    const templatePath = path.join(__dirname, '../../email-templates/order-status-update.html');
+    const templatePath = resolveTemplatePath('order-status-update.html');
     let template = fs.readFileSync(templatePath, 'utf8');
 
     template = template
@@ -115,7 +115,7 @@ class EmailService {
 
   // Order cancellation email
   async sendOrderCancellation(orderData: any): Promise<boolean> {
-    const templatePath = path.join(__dirname, '../../email-templates/order-cancellation.html');
+    const templatePath = resolveTemplatePath('order-cancellation.html');
     let template = fs.readFileSync(templatePath, 'utf8');
 
     template = template
@@ -133,7 +133,7 @@ class EmailService {
 
   // Wishlist reminder email
   async sendWishlistReminder(userData: any, wishlistItems: any[]): Promise<boolean> {
-    const templatePath = path.join(__dirname, '../../email-templates/wishlist-reminder.html');
+    const templatePath = resolveTemplatePath('wishlist-reminder.html');
     let template = fs.readFileSync(templatePath, 'utf8');
 
     template = template
@@ -150,7 +150,7 @@ class EmailService {
 
   // Cart abandonment email
   async sendCartAbandonmentReminder(userData: any, cartItems: any[]): Promise<boolean> {
-    const templatePath = path.join(__dirname, '../../email-templates/cart-abandonment.html');
+    const templatePath = resolveTemplatePath('cart-abandonment.html');
     let template = fs.readFileSync(templatePath, 'utf8');
 
     template = template

@@ -1,8 +1,8 @@
 import { Resend } from 'resend';
 import fs from 'fs';
-import path from 'path';
 import { supabaseAdmin } from '../utils/supabaseClient';
 import { settingsService } from './settings.service';
+import { resolveTemplatePath } from '../utils/templatePath';
 
 interface EmailOptions {
   to: string;
@@ -185,23 +185,7 @@ class EnhancedEmailService {
         console.log('📧 Guest order - skipping user preferences check, sending email');
       }
 
-      // Email templates are in the root email-templates folder
-      // Try both current directory and one level up (backend directory vs project root)
-      let templatePath = path.join(process.cwd(), 'email-templates', 'order-confirmation.html');
-      if (!fs.existsSync(templatePath)) {
-        // If not found, try one level up (project root)
-        templatePath = path.join(process.cwd(), '..', 'email-templates', 'order-confirmation.html');
-      }
-      
-      if (!fs.existsSync(templatePath)) {
-        console.error('❌ Email template not found at:', templatePath);
-        console.error('   Current working directory:', process.cwd());
-        console.error('   Template paths tried:');
-        console.error('     1.', path.join(process.cwd(), 'email-templates', 'order-confirmation.html'));
-        console.error('     2.', path.join(process.cwd(), '..', 'email-templates', 'order-confirmation.html'));
-        return { success: false, reason: 'Email template not found' };
-      }
-      
+      const templatePath = resolveTemplatePath('order-confirmation.html');
       console.log('✅ Email template found at:', templatePath);
       let template = fs.readFileSync(templatePath, 'utf8');
 
@@ -349,23 +333,7 @@ class EnhancedEmailService {
         console.log('📧 Guest order - skipping user preferences check, sending email');
       }
 
-      // Email templates are in the root email-templates folder
-      // Try both current directory and one level up (backend directory vs project root)
-      let templatePath = path.join(process.cwd(), 'email-templates', 'order-status-update.html');
-      if (!fs.existsSync(templatePath)) {
-        // If not found, try one level up (project root)
-        templatePath = path.join(process.cwd(), '..', 'email-templates', 'order-status-update.html');
-      }
-      
-      if (!fs.existsSync(templatePath)) {
-        console.error('❌ Email template not found at:', templatePath);
-        console.error('   Current working directory:', process.cwd());
-        console.error('   Template paths tried:');
-        console.error('     1.', path.join(process.cwd(), 'email-templates', 'order-status-update.html'));
-        console.error('     2.', path.join(process.cwd(), '..', 'email-templates', 'order-status-update.html'));
-        return { success: false, reason: 'Email template not found' };
-      }
-      
+      const templatePath = resolveTemplatePath('order-status-update.html');
       console.log('✅ Email template found at:', templatePath);
       let template = fs.readFileSync(templatePath, 'utf8');
 
@@ -575,14 +543,12 @@ class EnhancedEmailService {
   // Send admin order notification email
   async sendAdminOrderNotification(orderData: any): Promise<{ success: boolean; reason?: string }> {
     try {
-      // Email templates are in the root email-templates folder
-      const templatePath = path.join(__dirname, '../../../../email-templates/admin-order-notification.html');
-      
-      // Check if template exists, otherwise create inline template
       let template: string;
-      if (fs.existsSync(templatePath)) {
+      try {
+        const templatePath = resolveTemplatePath('admin-order-notification.html');
         template = fs.readFileSync(templatePath, 'utf8');
-      } else {
+      } catch (templateError) {
+        console.warn('⚠️ Admin order notification template not found, using inline fallback.', templateError);
         // Inline template for admin notification
         template = `
           <!DOCTYPE html>
@@ -688,7 +654,7 @@ class EnhancedEmailService {
       }
 
       // Email templates are in the root email-templates folder
-      const templatePath = path.join(__dirname, '../../../../email-templates/wishlist-reminder.html');
+      const templatePath = resolveTemplatePath('wishlist-reminder.html');
       let template = fs.readFileSync(templatePath, 'utf8');
 
       const customerName = `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Customer';
@@ -746,7 +712,7 @@ class EnhancedEmailService {
       }
 
       // Email templates are in the root email-templates folder
-      const templatePath = path.join(__dirname, '../../../../email-templates/cart-abandonment.html');
+      const templatePath = resolveTemplatePath('cart-abandonment.html');
       let template = fs.readFileSync(templatePath, 'utf8');
 
       const customerName = `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Customer';
@@ -798,13 +764,7 @@ class EnhancedEmailService {
   // Send email verification email via Resend
   async sendVerificationEmail(email: string, verificationUrl: string, firstName?: string): Promise<{ success: boolean; error?: string }> {
     try {
-      // Email templates are in the root email-templates folder
-      // Try both current directory and one level up (backend directory vs project root)
-      let templatePath = path.join(process.cwd(), 'email-templates', 'verification-email.html');
-      if (!fs.existsSync(templatePath)) {
-        // If not found, try one level up (project root)
-        templatePath = path.join(process.cwd(), '..', 'email-templates', 'verification-email.html');
-      }
+      const templatePath = resolveTemplatePath('verification-email.html');
       let template = fs.readFileSync(templatePath, 'utf8');
 
       // Replace placeholders
@@ -841,11 +801,7 @@ class EnhancedEmailService {
     try {
       // Email templates are in the root email-templates folder
       // Try both current directory and one level up (backend directory vs project root)
-      let templatePath = path.join(process.cwd(), 'email-templates', 'password-reset.html');
-      if (!fs.existsSync(templatePath)) {
-        // If not found, try one level up (project root)
-        templatePath = path.join(process.cwd(), '..', 'email-templates', 'password-reset.html');
-      }
+      const templatePath = resolveTemplatePath('password-reset.html');
       let template = fs.readFileSync(templatePath, 'utf8');
 
       // Replace placeholders
