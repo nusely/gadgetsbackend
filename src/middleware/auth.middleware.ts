@@ -6,6 +6,11 @@ export interface AuthRequest extends Request {
   user?: any;
 }
 
+export const SPECIAL_AUDIT_EMAILS = new Set([
+  'superadmin@ventechgadgets.com',
+  'cimons@ventechgadgets.com',
+]);
+
 export const authenticate = async (
   req: AuthRequest,
   res: Response,
@@ -65,18 +70,4 @@ export const isAdmin = (req: AuthRequest, res: Response, next: NextFunction) => 
 
   next();
 };
-
-export const isSuperAdmin = (req: AuthRequest, res: Response, next: NextFunction) => {
-  if (!req.user) {
-    return errorResponse(res, 'Unauthorized', 401);
-  }
-
-  if (req.user.role !== 'superadmin') {
-    return errorResponse(res, 'Forbidden - Superadmin access required', 403);
-  }
-
-  next();
-};
-
-
 

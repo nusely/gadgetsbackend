@@ -210,12 +210,13 @@ class EnhancedEmailService {
         ? `${orderData.delivery_address.delivery_option.estimated_days} business days`
         : orderData.delivery_option?.estimated_days 
           ? `${orderData.delivery_option.estimated_days} business days`
-          : '5-7 business days';
+          : '2-3 business days';
       
       // Generate tracking URL
       const frontendUrl = process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_API_URL || 'https://ventechgadgets.com';
-      const trackingUrl = `${frontendUrl}/orders/${orderData.id}`;
-      const contactUrl = `${frontendUrl}/contact`;
+      const normalizedFrontendUrl = frontendUrl.replace(/\/$/, '');
+      const trackingUrl = `${normalizedFrontendUrl}/track-order?order=${encodeURIComponent(orderData.order_number || '')}`;
+      const contactUrl = `${normalizedFrontendUrl}/contact`;
 
       // Replace placeholders with actual data
       template = template
@@ -237,7 +238,7 @@ class EnhancedEmailService {
         .replace(/{{TRACKING_URL}}/g, trackingUrl)
         .replace(/{{CONTACT_URL}}/g, contactUrl)
         .replace(/{{ORDER_NOTES}}/g, orderData.notes ? `<div style="background-color: #f9f9f9; border-radius: 8px; padding: 15px; margin: 20px 0;"><h3 style="color: #1A1A1A; font-size: 16px; margin: 0 0 10px 0;">Order Notes:</h3><p style="color: #3A3A3A; font-size: 14px; margin: 0;">${orderData.notes}</p></div>` : '')
-        .replace(/{{LOGO_URL}}/g, 'https://images.ventechgadgets.com/logo/ventech-logo-white.png');
+        .replace(/{{LOGO_URL}}/g, 'https://files.ventechgadgets.com/ventech_logo_1.webp');
 
       // Verify placeholder replacement
       const remainingPlaceholders = template.match(/\{\{([^}]+)\}\}/g);
@@ -355,8 +356,9 @@ class EnhancedEmailService {
       
       // Generate public tracking URL (works for guest customers using order number)
       const frontendUrl = process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_API_URL || 'https://ventechgadgets.com';
-      const trackingUrl = `${frontendUrl}/track-order?order_number=${orderData.order_number || ''}`;
-      const contactUrl = `${frontendUrl}/contact`;
+      const normalizedFrontendUrl = frontendUrl.replace(/\/$/, '');
+      const trackingUrl = `${normalizedFrontendUrl}/track-order?order=${encodeURIComponent(orderData.order_number || '')}`;
+      const contactUrl = `${normalizedFrontendUrl}/contact`;
       
       // Get customer name - try multiple sources
       const customerName = orderData.customer_name || 
@@ -379,7 +381,7 @@ class EnhancedEmailService {
         .replace(/{{ORDER_ITEMS}}/g, this.formatOrderItemsForEmail(orderData.items || orderData.order_items || []))
         .replace(/{{TRACKING_URL}}/g, trackingUrl)
         .replace(/{{CONTACT_URL}}/g, contactUrl)
-        .replace(/{{LOGO_URL}}/g, 'https://images.ventechgadgets.com/logo/ventech-logo-white.png');
+        .replace(/{{LOGO_URL}}/g, 'https://files.ventechgadgets.com/ventech_logo_1.webp');
 
       // Verify placeholder replacement
       const remainingPlaceholders = template.match(/\{\{([^}]+)\}\}/g);
@@ -429,6 +431,80 @@ class EnhancedEmailService {
       return { success };
     } catch (error) {
       console.error('Error sending order status update:', error);
+      return { success: false, reason: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  async sendOrderCancellation(orderData: any): Promise<{ success: boolean; skipped?: boolean; reason?: string }> {
+    try {
+      console.log('📧 sendOrderCancellation called:', {
+        order_number: orderData.order_number,
+        customer_email: orderData.customer_email,
+        user_id: orderData.user_id,
+        cancelled_by: orderData.cancelled_by,
+      });
+
+      if (orderData.user_id) {
+        try {
+          const shouldSend = await this.shouldSendEmail(orderData.user_id, 'transactional');
+          if (!shouldSend) {
+            console.log(`⚠️ Skipping cancellation email for user ${orderData.user_id} - email notifications disabled`);
+            return { success: true, skipped: true, reason: 'User has disabled email notifications' };
+          }
+        } catch (prefError: any) {
+          console.error('❌ Error checking user preferences for cancellation email (sending anyway):', prefError?.message || prefError);
+        }
+      }
+
+      const templatePath = resolveTemplatePath('order-cancellation.html');
+      let template = fs.readFileSync(templatePath, 'utf8');
+
+      const frontendUrl = process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_API_URL || 'https://ventechgadgets.com';
+      const normalizedFrontendUrl = frontendUrl.replace(/\/$/, '');
+      const trackingUrl = `${normalizedFrontendUrl}/track-order?order=${encodeURIComponent(orderData.order_number || '')}`;
+
+      const cancellationReason =
+        orderData.cancellation_reason ||
+        (orderData.cancelled_by === 'customer' ? 'Cancelled by customer request' : 'Order cancelled by administrator');
+
+      const customerName =
+        orderData.customer_name ||
+        orderData.user?.full_name ||
+        `${orderData.user?.first_name || ''} ${orderData.user?.last_name || ''}`.trim() ||
+        orderData.shipping_address?.full_name ||
+        orderData.delivery_address?.full_name ||
+        'Customer';
+
+      template = template
+        .replace(/{{CUSTOMER_NAME}}/g, customerName)
+        .replace(/{{ORDER_NUMBER}}/g, orderData.order_number || '')
+        .replace(/{{CANCELLATION_REASON}}/g, cancellationReason)
+        .replace(/{{CANCELLATION_DATE}}/g, new Date().toLocaleDateString())
+        .replace(/{{TRACKING_URL}}/g, trackingUrl);
+
+      if (!orderData.customer_email) {
+        console.error('❌ No customer email provided for order cancellation:', orderData.order_number);
+        return { success: false, reason: 'No customer email provided' };
+      }
+
+      const success = await this.sendEmail(
+        {
+          to: orderData.customer_email,
+          subject: `Order Cancelled - ${orderData.order_number}`,
+          html: template,
+        },
+        true
+      );
+
+      if (!success) {
+        console.error('❌ Failed to send order cancellation email to:', orderData.customer_email);
+        return { success: false, reason: 'Failed to send email' };
+      }
+
+      console.log(`✅ Order cancellation email sent successfully to ${orderData.customer_email}`);
+      return { success: true };
+    } catch (error) {
+      console.error('Error sending order cancellation email:', error);
       return { success: false, reason: error instanceof Error ? error.message : 'Unknown error' };
     }
   }

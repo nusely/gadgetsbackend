@@ -129,9 +129,13 @@ const computeDiscountAmount = (
 
   if (record.type === 'fixed_amount') {
     const discountAmount = clampDiscountAmount(record, record.value, baseAmount);
+    const adjustedDeliveryFee =
+      record.applies_to === 'shipping'
+        ? Math.max(ensurePositive(deliveryFee) - discountAmount, 0)
+        : deliveryFee;
     return {
       discountAmount,
-      adjustedDeliveryFee: deliveryFee,
+      adjustedDeliveryFee,
     };
   }
 
@@ -172,18 +176,22 @@ export const evaluateDiscount = async (
   validateActivityWindow(record);
   validateUsage(record);
 
-  const baseAmount = resolveBaseAmount(record, input.subtotal, input.deliveryFee);
+  const adjustedRecord =
+    record.type === 'percentage' && record.applies_to !== 'products'
+      ? { ...record, applies_to: 'products' as DiscountRecord['applies_to'] }
+      : record;
 
-  const minimum = ensurePositive(record.minimum_amount || 0);
+  const baseAmount = resolveBaseAmount(adjustedRecord, input.subtotal, input.deliveryFee);
+
+  const minimum = ensurePositive(adjustedRecord.minimum_amount || 0);
   if (minimum > 0) {
-    const comparator = record.applies_to === 'shipping' ? input.deliveryFee : input.subtotal;
-    if (comparator < minimum) {
-      throw new Error(`Discount requires a minimum order amount of ${minimum.toFixed(2)}.`);
+    if (input.subtotal < minimum) {
+      throw new Error(`Discount requires a minimum product amount of ${minimum.toFixed(2)}.`);
     }
   }
 
   const { discountAmount, adjustedDeliveryFee } = computeDiscountAmount(
-    record,
+    adjustedRecord,
     baseAmount,
     input.deliveryFee
   );
@@ -196,7 +204,7 @@ export const evaluateDiscount = async (
     discountId: record.id,
     code: NORMALIZED_CODE(record.name || input.code),
     type: record.type,
-    appliesTo: record.applies_to,
+    appliesTo: adjustedRecord.applies_to,
     discountAmount,
     adjustedDeliveryFee,
     metadata: record.metadata || undefined,

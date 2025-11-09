@@ -118,4 +118,14 @@ export const applyDiscountSchema = z.object({
     .min(1),
 });
 
+const cartItemSyncSchema = z.object({
+  product_id: z.string().uuid(),
+  quantity: z.number().int().min(1),
+  selected_variants: z.record(z.string(), z.any()).optional().nullable().default({}),
+});
+
+export const cartSyncSchema = z.object({
+  items: z.array(cartItemSyncSchema).optional().default([]),
+});
+
 

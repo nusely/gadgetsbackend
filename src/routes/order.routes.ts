@@ -64,7 +64,6 @@ router.patch(
 router.patch(
   '/:id/cancel',
   authenticate,
-  isAdmin,
   adminAuditLogger('orders:cancel'),
   orderController.cancelOrder.bind(orderController)
 );

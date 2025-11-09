@@ -9,7 +9,9 @@ import {
   getAllCategories,
   getLowStockProducts,
 } from '../controllers/product.controller';
+import { updateOptionPrice, deleteOption, deleteAttribute } from '../controllers/productVariant.controller';
 import { authenticate, isAdmin } from '../middleware/auth.middleware';
+import { adminAuditLogger } from '../middleware/audit.middleware';
 
 const router = Router();
 
@@ -20,6 +22,30 @@ router.get('/categories', getAllCategories);
 
 // Admin helper routes
 router.get('/low-stock', authenticate, isAdmin, getLowStockProducts);
+
+router.patch(
+  '/variants/options/:optionId',
+  authenticate,
+  isAdmin,
+  adminAuditLogger('products:variant-update-option-price'),
+  updateOptionPrice
+);
+
+router.delete(
+  '/variants/options/:optionId',
+  authenticate,
+  isAdmin,
+  adminAuditLogger('products:variant-delete-option'),
+  deleteOption
+);
+
+router.delete(
+  '/variants/attributes/:attributeId',
+  authenticate,
+  isAdmin,
+  adminAuditLogger('products:variant-delete-attribute'),
+  deleteAttribute
+);
 
 router.get('/:slug', getProductBySlug);
 

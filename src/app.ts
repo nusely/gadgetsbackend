@@ -13,6 +13,8 @@ import dealRoutes from './routes/deal.routes';
 import discountRoutes from './routes/discount.routes';
 import logRoutes from './routes/log.routes';
 import settingsRoutes from './routes/settings.routes';
+import customerRoutes from './routes/customer.routes';
+import cartRoutes from './routes/cart.routes';
 import { errorHandler, notFound } from './middleware/error.middleware';
 
 const app: Application = express();
@@ -57,6 +59,8 @@ app.use('/api/deals', dealRoutes);
 app.use('/api/discounts', discountRoutes);
 app.use('/api/logs', logRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/customers', customerRoutes);
+app.use('/api/cart', cartRoutes);
 
 // Error handling
 app.use(notFound);

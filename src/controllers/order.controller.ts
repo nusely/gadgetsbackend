@@ -338,19 +338,58 @@ export class OrderController {
   }
 
   // Cancel order
-  async cancelOrder(req: Request, res: Response) {
+  async cancelOrder(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;
       const { cancellation_reason } = req.body;
 
+      const { data: existingOrder, error: fetchError } = await supabaseAdmin
+        .from('orders')
+        .select('id, user_id, status, payment_status')
+        .eq('id', id)
+        .single();
+
+      if (fetchError || !existingOrder) {
+        return res.status(404).json({
+          success: false,
+          message: 'Order not found',
+        });
+      }
+
+      const requesterId = req.user?.id;
+      const requesterRole = req.user?.role;
+      const isAdmin = requesterRole === 'admin' || requesterRole === 'superadmin';
+      const isOwner = requesterId ? existingOrder.user_id === requesterId : false;
+      const shouldFailPayment = isOwner && !isAdmin;
+
+      if (!isAdmin && !isOwner) {
+        return res.status(403).json({
+          success: false,
+          message: 'You are not authorized to cancel this order',
+        });
+      }
+
+      if (!isAdmin && existingOrder.status !== 'pending') {
+        return res.status(400).json({
+          success: false,
+          message: 'Only pending orders can be cancelled',
+        });
+      }
+
+      const updatePayload: Record<string, any> = {
+        status: 'cancelled',
+        notes: cancellation_reason,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (shouldFailPayment) {
+        updatePayload.payment_status = 'failed';
+      }
+
       // Update order
       const { data: orderData, error: orderError } = await supabaseAdmin
         .from('orders')
-        .update({
-          status: 'cancelled',
-          notes: cancellation_reason,
-          updated_at: new Date().toISOString(),
-        })
+        .update(updatePayload)
         .eq('id', id)
         .select(`
           *,
@@ -361,24 +400,58 @@ export class OrderController {
 
       if (orderError) throw orderError;
 
+      if (shouldFailPayment) {
+        try {
+          const { error: transactionError } = await supabaseAdmin
+            .from('transactions')
+            .update({
+              payment_status: 'failed',
+              status: 'failed',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('order_id', id);
+
+          if (transactionError) {
+            console.warn('Warning: Failed to mark related transaction as failed during cancellation:', transactionError);
+          }
+        } catch (transactionUpdateError) {
+          console.warn('Warning: Error updating transaction during cancellation:', transactionUpdateError);
+        }
+      }
+
+      const customerName =
+        orderData.user?.full_name ||
+        `${orderData.user?.first_name || ''} ${orderData.user?.last_name || ''}`.trim() ||
+        orderData.shipping_address?.full_name ||
+        orderData.delivery_address?.full_name ||
+        'Customer';
+
+      const customerEmail =
+        orderData.user?.email ||
+        orderData.shipping_address?.email ||
+        orderData.delivery_address?.email ||
+        orderData.user?.email ||
+        null;
+
       // Send cancellation email
       try {
-        const customerName = `${orderData.user.first_name || ''} ${orderData.user.last_name || ''}`.trim() || 'Customer';
-        const emailData = {
-          ...orderData,
-          customer_name: customerName,
-          customer_email: orderData.user.email,
-          cancellation_reason,
-        };
-
-        // Note: Using order confirmation template for cancellation
-        const emailResult = await enhancedEmailService.sendOrderConfirmation(emailData);
-        if (emailResult.skipped) {
-          console.log(`Order cancellation email skipped: ${emailResult.reason}`);
-        } else if (emailResult.success) {
-          console.log('Order cancellation email sent successfully');
+        if (customerEmail) {
+          const emailResult = await enhancedEmailService.sendOrderCancellation({
+            ...orderData,
+            customer_name: customerName,
+            customer_email: customerEmail,
+            cancellation_reason: cancellation_reason || (shouldFailPayment ? 'Cancelled by customer' : 'Cancelled by admin'),
+            cancelled_by: isOwner ? 'customer' : requesterRole || 'unknown',
+          });
+          if (emailResult.skipped) {
+            console.log(`Order cancellation email skipped: ${emailResult.reason}`);
+          } else if (emailResult.success) {
+            console.log('Order cancellation email sent successfully');
+          } else {
+            console.error('Failed to send order cancellation email:', emailResult.reason);
+          }
         } else {
-          console.error('Failed to send order cancellation email:', emailResult.reason);
+          console.warn('Order cancellation email not sent - no customer email available.');
         }
       } catch (emailError) {
         console.error('Failed to send order cancellation email:', emailError);
