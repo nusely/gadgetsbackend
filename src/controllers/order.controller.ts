@@ -4,6 +4,7 @@ import { supabaseAdmin } from '../utils/supabaseClient';
 import { commitDiscountUsage, evaluateDiscount } from '../services/discount.service';
 import enhancedEmailService from '../services/enhanced-email.service';
 import pdfService from '../services/pdf.service';
+import { customerService } from '../services/customer.service';
 
 export class OrderController {
   // Get all orders (admin)
@@ -16,6 +17,7 @@ export class OrderController {
         .select(`
           *,
           user:users!orders_user_id_fkey(id, first_name, last_name, full_name, email),
+          customer:customers!orders_customer_id_fkey(id, full_name, email, phone, source),
           order_items:order_items(*)
         `);
 
@@ -103,6 +105,7 @@ export class OrderController {
         .select(`
           *,
           user:users!orders_user_id_fkey(id, first_name, last_name, email),
+          customer:customers!orders_customer_id_fkey(id, full_name, email, phone, source),
           order_items:order_items(*)
         `)
         .eq('id', id)
@@ -170,6 +173,7 @@ export class OrderController {
         .select(`
           *,
           user:users!orders_user_id_fkey(id, first_name, last_name, email),
+          customer:customers!orders_customer_id_fkey(id, full_name, email, phone, source),
           order_items:order_items(*)
         `)
         .eq('order_number', order_number.trim())
@@ -185,7 +189,9 @@ export class OrderController {
       // Verify email matches (either user email or email in shipping_address)
       let emailMatches = false;
       
-      if (orderData.user && orderData.user.email && orderData.user.email.toLowerCase() === email.toLowerCase()) {
+      if (orderData.customer && orderData.customer.email && orderData.customer.email.toLowerCase() === email.toLowerCase()) {
+        emailMatches = true;
+      } else if (orderData.user && orderData.user.email && orderData.user.email.toLowerCase() === email.toLowerCase()) {
         emailMatches = true;
       } else if (orderData.shipping_address && (orderData.shipping_address as any)?.email) {
         if ((orderData.shipping_address as any).email.toLowerCase() === email.toLowerCase()) {
@@ -253,6 +259,7 @@ export class OrderController {
         .select(`
           *,
           user:users!orders_user_id_fkey(id, first_name, last_name, email),
+          customer:customers!orders_customer_id_fkey(id, full_name, email, phone, source),
           order_items:order_items(*)
         `)
         .single();
@@ -265,7 +272,10 @@ export class OrderController {
         let customerEmail: string | null = null;
         let customerName: string = 'Customer';
         
-        if (orderData.user && orderData.user.email) {
+        if (orderData.customer && orderData.customer.email) {
+          customerEmail = orderData.customer.email;
+          customerName = orderData.customer.full_name || customerName;
+        } else if (orderData.user && orderData.user.email) {
           // Logged-in user
           customerEmail = orderData.user.email;
           customerName = `${orderData.user.first_name || ''} ${orderData.user.last_name || ''}`.trim() || 'Customer';
@@ -340,6 +350,7 @@ export class OrderController {
         .select(`
           *,
           user:users!orders_user_id_fkey(id, first_name, last_name, email),
+          customer:customers!orders_customer_id_fkey(id, full_name, email, phone, source),
           order_items:order_items(*)
         `)
         .single();
@@ -440,6 +451,7 @@ export class OrderController {
         .select(`
           *,
           user:users!orders_user_id_fkey(id, first_name, last_name, email),
+          customer:customers!orders_customer_id_fkey(id, full_name, email, phone, source),
           order_items:order_items(*)
         `)
         .single();
@@ -466,6 +478,7 @@ export class OrderController {
       }
 
       const customerName =
+        orderData.customer?.full_name ||
         orderData.user?.full_name ||
         `${orderData.user?.first_name || ''} ${orderData.user?.last_name || ''}`.trim() ||
         orderData.shipping_address?.full_name ||
@@ -473,10 +486,10 @@ export class OrderController {
         'Customer';
 
       const customerEmail =
+        orderData.customer?.email ||
         orderData.user?.email ||
         orderData.shipping_address?.email ||
         orderData.delivery_address?.email ||
-        orderData.user?.email ||
         null;
 
       // Send cancellation email
@@ -567,7 +580,7 @@ export class OrderController {
   }
 
   // Create order (with email confirmation)
-  async createOrder(req: Request, res: Response) {
+  async createOrder(req: AuthRequest, res: Response) {
     try {
       console.log('📦 Order creation request received:', {
         hasUserId: !!req.body.user_id,
@@ -581,13 +594,14 @@ export class OrderController {
 
       const {
         user_id,
+        customer_id: providedCustomerId,
         order_number, // Optional - will be generated if not provided
         subtotal,
         discount_code,
         tax,
         delivery_fee,
         delivery_option,
-        total: provided_total,
+        total: providedTotalRaw,
         payment_method,
         delivery_address,
         order_items,
@@ -614,7 +628,33 @@ export class OrderController {
         });
       }
 
-      const providedTotal = typeof provided_total === 'number' ? Number(provided_total) : null;
+      const providedTotal = typeof providedTotalRaw === 'number' ? Number(providedTotalRaw) : null;
+
+      const actor = req.user ?? null;
+
+      let userData: any = null;
+      if (user_id) {
+        const { data, error: userError } = await supabaseAdmin
+          .from('users')
+          .select('id, email, full_name, first_name, last_name, phone')
+          .eq('id', user_id)
+          .maybeSingle();
+
+        if (!userError) {
+          userData = data;
+        }
+      }
+
+      if (!userData && actor) {
+        userData = {
+          id: actor.id,
+          email: actor.email,
+          full_name: actor.full_name,
+          first_name: actor.first_name,
+          last_name: actor.last_name,
+          phone: actor.phone,
+        };
+      }
 
       const sanitizedOrderItems = order_items.map((item: any) => ({
         product_id: item.product_id ?? item.id ?? null,
@@ -698,11 +738,77 @@ export class OrderController {
         delivery_option: delivery_option || { name: 'Standard', price: adjustedDeliveryFee },
       } : null;
 
+      const shipping = shippingAddress as Record<string, any> | null;
+      const shippingFullName = typeof shipping?.full_name === 'string' ? shipping.full_name.trim() : '';
+      const shippingNameFromParts = [shipping?.first_name, shipping?.last_name]
+        .filter((part) => typeof part === 'string' && part.trim().length > 0)
+        .join(' ');
+
+      const candidateName = (userData?.full_name || shippingFullName || shippingNameFromParts)?.trim() || null;
+      const candidateEmail = (userData?.email || (typeof shipping?.email === 'string' ? shipping.email : null))?.trim() || null;
+      const candidatePhone = (typeof shipping?.phone === 'string' && shipping.phone.trim().length > 0)
+        ? shipping.phone.trim()
+        : (typeof userData?.phone === 'string' ? userData.phone.trim() : null);
+
+      let resolvedCustomer: any = null;
+      let customerId = providedCustomerId;
+
+      try {
+        if (customerId) {
+          resolvedCustomer = await customerService.findById(customerId);
+          if (!resolvedCustomer) {
+            return res.status(400).json({
+              success: false,
+              message: 'Customer not found. Please refresh and try again.',
+            });
+          }
+        } else if (candidateEmail || candidatePhone) {
+          const customerRecord = await customerService.upsertCustomer({
+            userId: user_id || null,
+            email: candidateEmail,
+            fullName: candidateName,
+            phone: candidatePhone,
+            createdBy: actor?.id || null,
+            source: user_id
+              ? 'registered'
+              : actor?.role === 'admin'
+              ? 'admin_manual_order'
+              : 'guest_checkout',
+          });
+          resolvedCustomer = customerRecord;
+          customerId = customerRecord?.id || null;
+        }
+      } catch (customerError: any) {
+        console.error('Customer upsert failed during order creation:', customerError);
+        return res.status(400).json({
+          success: false,
+          message: customerError?.message || 'Unable to associate order with customer',
+        });
+      }
+
+      if (!customerId && (candidateEmail || candidatePhone)) {
+        try {
+          const fallbackCustomer = await customerService.upsertCustomer({
+            userId: null,
+            email: candidateEmail,
+            fullName: candidateName,
+            phone: candidatePhone,
+            createdBy: actor?.id || null,
+            source: actor?.role === 'admin' ? 'admin_manual_order' : 'guest_checkout',
+          });
+          resolvedCustomer = fallbackCustomer;
+          customerId = fallbackCustomer?.id || null;
+        } catch (fallbackError) {
+          console.error('Fallback customer creation failed:', fallbackError);
+        }
+      }
+
       // Create order
       // Note: payment_reference column does NOT exist in orders table
       // Store it in shipping_address JSON instead (if provided)
       const orderInsertData: any = {
         user_id,
+        customer_id: customerId,
         order_number: finalOrderNumber,
         subtotal: Number(computedSubtotal.toFixed(2)),
         discount: appliedDiscountAmount,
@@ -845,36 +951,42 @@ export class OrderController {
       
       console.log(`✅ Created ${orderItems.length} order items`);
 
+      if (customerId) {
+        await customerService.touchLastOrder(customerId).catch((touchError) => {
+          console.error('Failed to update customer last_order_at:', touchError);
+        });
+      }
+
       // Decrease stock for each product in the order
       try {
         for (const item of orderItems) {
           if (item.product_id) {
-            const { data: product, error: productError } = await supabaseAdmin
+          const { data: product, error: productError } = await supabaseAdmin
+            .from('products')
+            .select('stock_quantity, in_stock')
+            .eq('id', item.product_id)
+            .single();
+
+          if (!productError && product) {
+            const currentStock = product.stock_quantity || 0;
+            const newStock = Math.max(0, currentStock - item.quantity);
+            const newInStock = newStock > 0;
+
+            const { error: updateError } = await supabaseAdmin
               .from('products')
-              .select('stock_quantity, in_stock')
-              .eq('id', item.product_id)
-              .single();
+              .update({
+                stock_quantity: newStock,
+                in_stock: newInStock,
+              })
+              .eq('id', item.product_id);
 
-            if (!productError && product) {
-              const currentStock = product.stock_quantity || 0;
-              const newStock = Math.max(0, currentStock - item.quantity);
-              const newInStock = newStock > 0;
-
-              const { error: updateError } = await supabaseAdmin
-                .from('products')
-                .update({
-                  stock_quantity: newStock,
-                  in_stock: newInStock,
-                })
-                .eq('id', item.product_id);
-
-              if (updateError) {
-                console.error(`❌ Failed to update stock for product ${item.product_id}:`, updateError);
-              } else {
-                console.log(`✅ Decreased stock for product ${item.product_id}: ${currentStock} → ${newStock}`);
-              }
+            if (updateError) {
+              console.error(`❌ Failed to update stock for product ${item.product_id}:`, updateError);
             } else {
-              console.error(`❌ Error fetching product ${item.product_id} for stock update:`, productError);
+              console.log(`✅ Decreased stock for product ${item.product_id}: ${currentStock} → ${newStock}`);
+            }
+          } else {
+            console.error(`❌ Error fetching product ${item.product_id} for stock update:`, productError);
             }
           } else if (item.deal_product_id) {
             const { data: dealProduct, error: dealProductError } = await supabaseAdmin
@@ -916,33 +1028,34 @@ export class OrderController {
         // This allows the order to be created even if stock update fails
       }
 
-      // Get user data for email (if logged in) - moved before transaction creation
-      let userData: any = null;
-      if (user_id) {
-        const { data, error: userError } = await supabaseAdmin
-          .from('users')
-          .select('first_name, last_name, email, full_name')
-          .eq('id', user_id)
-          .maybeSingle();
-
-        if (!userError) {
-          userData = data;
-        }
-      }
-
       // Create transaction record for this order (even if pending)
       // This ensures all orders have a transaction record for tracking
       try {
         // Determine customer email and name
         let customerEmail: string | null = null;
         let customerName: string = 'Customer';
+        let customerPhone = resolvedCustomer?.phone || null;
         
-        if (userData && userData.email) {
+        if (resolvedCustomer?.email) {
+          customerEmail = resolvedCustomer.email;
+          customerName = resolvedCustomer.full_name || customerName;
+        } else if (userData?.email) {
+          // Logged-in user
           customerEmail = userData.email;
-          customerName = userData.full_name || `${userData.first_name || ''} ${userData.last_name || ''}`.trim() || 'Customer';
+          customerName =
+            userData.full_name || `${userData.first_name || ''} ${userData.last_name || ''}`.trim() || 'Customer';
         } else if (shippingAddress && (shippingAddress as any)?.email) {
+          // Guest checkout - get email from shipping address
           customerEmail = (shippingAddress as any).email;
           customerName = shippingAddress?.full_name || shippingAddress?.first_name || 'Guest Customer';
+        }
+
+        if (!customerPhone && userData?.phone) {
+          customerPhone = userData.phone;
+        }
+
+        if (!customerPhone && shippingAddress && (shippingAddress as any)?.phone) {
+          customerPhone = (shippingAddress as any).phone;
         }
 
         // Get order payment_status to sync with transaction
@@ -970,6 +1083,7 @@ export class OrderController {
           total: computedTotal,
             payment_method,
             order_id: orderData.id,
+            ...(customerPhone ? { customer_phone: customerPhone } : {}),
           },
           initiated_at: new Date().toISOString(),
         };
@@ -1040,8 +1154,10 @@ export class OrderController {
       let customerEmail: string | null = null;
       let customerName: string = 'Customer';
       
-      if (userData && userData.email) {
-        // Logged-in user
+      if (resolvedCustomer?.email) {
+        customerEmail = resolvedCustomer.email;
+        customerName = resolvedCustomer.full_name || customerName;
+      } else if (userData?.email) {
         customerEmail = userData.email;
         customerName = userData.full_name || `${userData.first_name || ''} ${userData.last_name || ''}`.trim() || 'Customer';
       } else if (shippingAddress && (shippingAddress as any)?.email) {
@@ -1090,8 +1206,8 @@ export class OrderController {
         console.log('📧 Sending admin order notification email to ventechgadgets@gmail.com');
         const emailData = {
           ...orderData,
-          customer_name: userData?.full_name || shippingAddress?.full_name || 'Guest Customer',
-          customer_email: userData?.email || (shippingAddress as any)?.email || 'No email',
+          customer_name: resolvedCustomer?.full_name || userData?.full_name || shippingAddress?.full_name || 'Guest Customer',
+          customer_email: resolvedCustomer?.email || userData?.email || (shippingAddress as any)?.email || 'No email',
           items: orderItems,
           notes: orderData.notes || null,
           delivery_address: shippingAddress, // Keep for email template compatibility
@@ -1114,17 +1230,14 @@ export class OrderController {
 
       // Create admin notification in dashboard
       try {
+        const notificationName = resolvedCustomer?.full_name || userData?.full_name || shippingAddress?.full_name || 'Guest Customer';
+
         const { error: notifError } = await supabaseAdmin
           .from('notifications')
           .insert([{
             type: 'order',
             title: `New Order: ${orderData.order_number}`,
-            message: `New order received from ${userData?.full_name || shippingAddress?.full_name || 'Guest Customer'}. Total: GHS ${orderData.total.toFixed(2)}`,
-            data: {
-              order_id: orderData.id,
-              order_number: orderData.order_number,
-              customer_name: userData?.full_name || shippingAddress?.full_name || 'Guest',
-            },
+            message: `New order received from ${notificationName}. Total: GHS ${orderData.total.toFixed(2)}`,
             is_read: false,
           }]);
 
@@ -1296,7 +1409,8 @@ export class OrderController {
         .select(`
           *,
           user:users!orders_user_id_fkey(id, first_name, last_name, email),
-          order_items!order_items_order_id_fkey(*)
+          customer:customers!orders_customer_id_fkey(id, full_name, email, phone, source),
+          order_items:order_items!order_items_order_id_fkey(*)
         `)
         .eq('id', id)
         .single();
@@ -1309,6 +1423,7 @@ export class OrderController {
           .select(`
             *,
             user:users!orders_user_id_fkey(id, first_name, last_name, email),
+            customer:customers!orders_customer_id_fkey(id, full_name, email, phone, source),
             order_items(*)
           `)
           .eq('id', id)

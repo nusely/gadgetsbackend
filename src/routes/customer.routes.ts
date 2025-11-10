@@ -6,11 +6,17 @@ import { adminAuditLogger } from '../middleware/audit.middleware';
 const router = Router();
 
 router.post(
+  '/link-user',
+  authenticate,
+  customerController.linkCustomerToUser.bind(customerController)
+);
+
+router.get(
   '/',
   authenticate,
   isAdmin,
-  adminAuditLogger('customers:create'),
-  customerController.createCustomer.bind(customerController)
+  adminAuditLogger('customers:list'),
+  customerController.listCustomers.bind(customerController)
 );
 
 export default router;

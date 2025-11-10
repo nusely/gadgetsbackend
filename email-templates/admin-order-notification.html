@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>New Order Notification</title>
+    <style>
+      :root {
+        color-scheme: light;
+      }
+
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+        background-color: #f4f6fb;
+        color: #1a1a1a;
+      }
+
+      .wrapper {
+        width: 100%;
+        background-color: #f4f6fb;
+        padding: 40px 0;
+      }
+
+      .container {
+        width: 100%;
+        max-width: 640px;
+        margin: 0 auto;
+        background-color: #ffffff;
+        border-radius: 18px;
+        overflow: hidden;
+        box-shadow: 0 12px 32px rgba(20, 20, 43, 0.08);
+      }
+
+      .header {
+        background: linear-gradient(135deg, #FF7A19, #FF9B4A);
+        padding: 32px;
+        text-align: center;
+        color: #ffffff;
+      }
+
+      .header h1 {
+        margin: 0;
+        font-size: 28px;
+        letter-spacing: 0.4px;
+      }
+
+      .header p {
+        margin: 12px 0 0;
+        font-size: 15px;
+        opacity: 0.92;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(255, 255, 255, 0.14);
+        backdrop-filter: blur(6px);
+        border-radius: 999px;
+        padding: 8px 18px;
+        font-size: 13px;
+        margin-top: 18px;
+      }
+
+      .content {
+        padding: 32px;
+      }
+
+      .order-card {
+        border-radius: 16px;
+        border: 1px solid #eceffd;
+        padding: 24px;
+        margin-bottom: 28px;
+        background: linear-gradient(180deg, rgba(255, 122, 25, 0.05) 0%, rgba(255, 255, 255, 0.9) 100%);
+      }
+
+      .order-card h2 {
+        margin: 0 0 12px;
+        font-size: 22px;
+        color: #FF7A19;
+      }
+
+      .order-meta {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 14px 20px;
+        margin-top: 18px;
+      }
+
+      .meta-item label {
+        display: block;
+        font-size: 12px;
+        letter-spacing: 0.8px;
+        text-transform: uppercase;
+        color: #6b7280;
+        margin-bottom: 4px;
+      }
+
+      .meta-item span {
+        font-size: 15px;
+        font-weight: 600;
+        color: #1f2937;
+      }
+
+      .notes {
+        margin-top: 18px;
+      }
+
+      .notes h3 {
+        margin: 0 0 8px;
+        font-size: 16px;
+        color: #1f2937;
+      }
+
+      .notes p {
+        margin: 0;
+        line-height: 1.6;
+        color: #374151;
+      }
+
+      .items-card {
+        border-radius: 16px;
+        border: 1px solid #eceffd;
+        padding: 24px;
+        margin-bottom: 28px;
+        background-color: #ffffff;
+        overflow: hidden;
+      }
+
+      .items-card h3 {
+        margin: 0 0 16px;
+        font-size: 17px;
+        color: #1f2937;
+      }
+
+      .items-table {
+        width: 100%;
+        border-collapse: collapse;
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid #e5e7eb;
+      }
+
+      .items-table th {
+        background-color: #f9fafb;
+        padding: 12px 16px;
+        font-size: 12px;
+        letter-spacing: 0.6px;
+        text-transform: uppercase;
+        color: #6b7280;
+        text-align: left;
+      }
+
+      .items-table td {
+        padding: 16px;
+        border-top: 1px solid #e5e7eb;
+        font-size: 14px;
+        vertical-align: top;
+        color: #1f2937;
+      }
+
+      .items-table td.price {
+        font-weight: 600;
+        color: #FF7A19;
+        text-align: right;
+      }
+
+      .summary-card {
+        border-radius: 16px;
+        border: 1px solid #eceffd;
+        padding: 24px;
+        margin-bottom: 28px;
+        background-color: #ffffff;
+      }
+
+      .summary-card h3 {
+        margin: 0 0 12px;
+        font-size: 17px;
+        color: #1f2937;
+      }
+
+      .summary-address {
+        margin: 0;
+        font-size: 14px;
+        line-height: 1.7;
+        color: #374151;
+        white-space: pre-line;
+      }
+
+      .summary-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 18px;
+        font-size: 15px;
+      }
+
+      .summary-row.total {
+        font-size: 18px;
+        font-weight: 700;
+        color: #FF7A19;
+        margin-top: 12px;
+      }
+
+      .footer {
+        padding: 0 32px 32px;
+        text-align: center;
+        color: #6b7280;
+        font-size: 12px;
+      }
+
+      .footer a {
+        color: #FF7A19;
+        text-decoration: none;
+      }
+
+      @media (max-width: 620px) {
+        .content {
+          padding: 24px;
+        }
+
+        .order-meta {
+          grid-template-columns: 1fr;
+        }
+
+        .item {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 10px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+      <div class="container">
+        <div class="header">
+          <div class="badge">VENTECH ORDER ALERT</div>
+          <h1>New order received</h1>
+          <p>A fresh order just landed in your dashboard. See the summary below.</p>
+        </div>
+        <div class="content">
+          <div class="order-card">
+            <h2>Order #{{ORDER_NUMBER}}</h2>
+            <div class="order-meta">
+              <div class="meta-item">
+                <label>Customer</label>
+                <span>{{CUSTOMER_NAME}}</span>
+              </div>
+              <div class="meta-item">
+                <label>Email</label>
+                <span>{{CUSTOMER_EMAIL}}</span>
+              </div>
+              <div class="meta-item">
+                <label>Order Date</label>
+                <span>{{ORDER_DATE}}</span>
+              </div>
+              <div class="meta-item">
+                <label>Total Amount</label>
+                <span>GHS {{TOTAL_AMOUNT}}</span>
+              </div>
+            </div>
+            {{ORDER_NOTES}}
+          </div>
+
+          <div class="items-card">
+            <h3>Items in this order</h3>
+            <table class="items-table" role="presentation" cellspacing="0" cellpadding="0">
+              <thead>
+                <tr>
+                  <th style="width: 50%;">Item</th>
+                  <th style="width: 15%;">Qty</th>
+                  <th style="width: 18%;">Unit</th>
+                  <th style="width: 17%; text-align: right;">Subtotal</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{ITEMS_LIST}}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="summary-card">
+            <h3>Delivery details</h3>
+            <p class="summary-address">{{DELIVERY_ADDRESS}}</p>
+            <div class="summary-row total">
+              <span>Total Charged</span>
+              <span>GHS {{TOTAL_AMOUNT}}</span>
+            </div>
+          </div>
+        </div>
+        <div class="footer">
+          <p>You are receiving this email because order notifications are enabled for Ventech Gadgets.</p>
+          <p>
+            View full order details in your admin panel ·
+            <a href="https://ventechgadgets.com/admin/orders" target="_blank">Open Admin</a>
+          </p>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

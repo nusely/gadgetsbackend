@@ -15,6 +15,7 @@ import logRoutes from './routes/log.routes';
 import settingsRoutes from './routes/settings.routes';
 import customerRoutes from './routes/customer.routes';
 import cartRoutes from './routes/cart.routes';
+import notificationRoutes from './routes/notification.routes';
 import { errorHandler, notFound } from './middleware/error.middleware';
 
 const app: Application = express();
@@ -61,6 +62,7 @@ app.use('/api/logs', logRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/cart', cartRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // Error handling
 app.use(notFound);
