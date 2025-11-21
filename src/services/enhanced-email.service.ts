@@ -577,16 +577,64 @@ class EnhancedEmailService {
       const unitPrice = item.unit_price || item.price || 0;
       const subtotal = item.subtotal || (unitPrice * (item.quantity || 0));
       const productImage = this.normalizeImageUrl(item.product_image || item.image || null);
+      
+      // Format variants for admin email (simpler format)
+      const variantInfo = this.formatVariantsForAdmin(item.selected_variants);
+      const productWithVariants = variantInfo ? `${item.product_name || 'Product'}<br><small style="color: #666; font-size: 11px;">${variantInfo}</small>` : (item.product_name || 'Product');
+      
       return `<tr>
-        <td style="padding: 10px; border-bottom: 1px solid #eee;">
-          ${productImage ? `<img src="${productImage}" alt="${item.product_name || 'Product'}" style="width: 50px; height: 50px; object-fit: cover; border-radius: 4px; margin-right: 10px;">` : ''}
-          ${item.product_name || 'Product'}
+        <td style="padding: 12px; border-bottom: 1px solid #eee; vertical-align: top;">
+          ${productImage ? `<img src="${productImage}" alt="${item.product_name || 'Product'}" style="width: 50px; height: 50px; object-fit: cover; border-radius: 4px; margin-right: 10px; vertical-align: top;">` : ''}
+          ${productWithVariants}
         </td>
-        <td style="padding: 10px; border-bottom: 1px solid #eee;">${item.quantity || 0}</td>
-        <td style="padding: 10px; border-bottom: 1px solid #eee;">GHS ${unitPrice.toFixed(2)}</td>
-        <td style="padding: 10px; border-bottom: 1px solid #eee;">GHS ${subtotal.toFixed(2)}</td>
+        <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: center;">${item.quantity || 0}</td>
+        <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: center;">GH₵${unitPrice.toFixed(2)}</td>
+        <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: right; font-weight: bold;">GH₵${subtotal.toFixed(2)}</td>
       </tr>`;
     }).join('');
+  }
+
+  // Format variants for admin email (simpler, more compact)
+  private formatVariantsForAdmin(selectedVariants: any): string {
+    if (!selectedVariants || typeof selectedVariants !== 'object') {
+      return '';
+    }
+
+    try {
+      let variants: any[] = [];
+      
+      if (Array.isArray(selectedVariants)) {
+        variants = selectedVariants;
+      } else if (typeof selectedVariants === 'string') {
+        try {
+          const parsed = JSON.parse(selectedVariants);
+          variants = Array.isArray(parsed) ? parsed : [parsed];
+        } catch {
+          return '';
+        }
+      } else {
+        variants = Object.values(selectedVariants).filter(v => v && typeof v === 'object');
+      }
+
+      if (variants.length === 0) return '';
+
+      const variantStrings = variants.map(variant => {
+        const name = variant.attribute_name || variant.name || 'Option';
+        const value = variant.option_value || variant.value || variant.label || 'Selected';
+        const price = variant.price_modifier || variant.price_adjustment || 0;
+        
+        if (price > 0) {
+          return `${name}: ${value} (+GH₵${price.toFixed(2)})`;
+        } else {
+          return `${name}: ${value}`;
+        }
+      });
+
+      return variantStrings.join(' • ');
+    } catch (error) {
+      console.error('Error formatting variants for admin email:', error);
+      return '';
+    }
   }
 
   // Format order items for email template (matches template format)
@@ -599,25 +647,98 @@ class EnhancedEmailService {
       const unitPrice = item.unit_price || item.price || 0;
       const subtotal = item.total_price || item.subtotal || (unitPrice * quantity);
       const productImage = this.normalizeImageUrl(item.product_image || item.image || null);
-      const variantInfo = item.selected_variants 
-        ? Object.entries(item.selected_variants).map(([key, value]: [string, any]) => `${key}: ${value}`).join(', ')
-        : '';
+      
+      // Format variants properly
+      const variantInfo = this.formatVariantsForEmail(item.selected_variants);
+      
+      // Calculate price breakdown
+      const priceBreakdown = this.formatPriceBreakdown(item);
       
       return `
-        <div style="padding: 15px; border-bottom: 1px solid #e0e0e0; display: flex; align-items: center;">
-          <img src="${productImage}" alt="${productName}" style="width: 80px; height: 80px; object-fit: cover; border-radius: 4px; margin-right: 15px;">
-          <div style="flex: 1;">
-            <h3 style="margin: 0 0 5px 0; color: #1A1A1A; font-size: 16px;">${productName}</h3>
-            <p style="margin: 0; color: #3A3A3A; font-size: 14px;">Qty: ${quantity}</p>
-            ${variantInfo ? `<p style="margin: 5px 0 0 0; color: #3A3A3A; font-size: 12px;">${variantInfo}</p>` : ''}
-          </div>
-          <div style="text-align: right;">
-            <p style="margin: 0; color: #FF7A19; font-size: 16px; font-weight: bold;">GHC ${subtotal.toFixed(2)}</p>
-            <p style="margin: 5px 0 0 0; color: #3A3A3A; font-size: 12px;">GHC ${unitPrice.toFixed(2)} each</p>
-          </div>
+        <div style="padding: 20px; border-bottom: 1px solid #e0e0e0;">
+          <table role="presentation" style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td style="width: 80px; vertical-align: top; padding-right: 15px;">
+                <img src="${productImage}" alt="${productName}" style="width: 80px; height: 80px; object-fit: cover; border-radius: 8px; border: 1px solid #e0e0e0;">
+              </td>
+              <td style="vertical-align: top;">
+                <h3 style="margin: 0 0 8px 0; color: #1A1A1A; font-size: 16px; font-weight: bold;">${productName}</h3>
+                <p style="margin: 0 0 8px 0; color: #3A3A3A; font-size: 14px;">Quantity: ${quantity}</p>
+                ${variantInfo ? `<div style="margin: 8px 0;">${variantInfo}</div>` : ''}
+                ${priceBreakdown}
+              </td>
+              <td style="width: 120px; text-align: right; vertical-align: top;">
+                <p style="margin: 0; color: #FF7A19; font-size: 18px; font-weight: bold;">GH₵${subtotal.toFixed(2)}</p>
+              </td>
+            </tr>
+          </table>
         </div>
       `;
     }).join('');
+  }
+
+  // Format variants for display in emails
+  private formatVariantsForEmail(selectedVariants: any): string {
+    if (!selectedVariants || typeof selectedVariants !== 'object') {
+      return '';
+    }
+
+    try {
+      // Handle different formats of selected_variants
+      let variants: any[] = [];
+      
+      if (Array.isArray(selectedVariants)) {
+        variants = selectedVariants;
+      } else if (typeof selectedVariants === 'string') {
+        try {
+          const parsed = JSON.parse(selectedVariants);
+          variants = Array.isArray(parsed) ? parsed : [parsed];
+        } catch {
+          return '';
+        }
+      } else {
+        // Convert object to array
+        variants = Object.values(selectedVariants).filter(v => v && typeof v === 'object');
+      }
+
+      if (variants.length === 0) return '';
+
+      const variantStrings = variants.map(variant => {
+        const name = variant.attribute_name || variant.name || 'Option';
+        const value = variant.option_value || variant.value || variant.label || 'Selected';
+        const price = variant.price_modifier || variant.price_adjustment || 0;
+        
+        if (price > 0) {
+          return `<span style="display: inline-block; background: #f8f9fa; padding: 4px 8px; border-radius: 4px; margin: 2px 4px 2px 0; font-size: 12px; color: #495057;"><strong>${name}:</strong> ${value} <span style="color: #28a745;">(+GH₵${price.toFixed(2)})</span></span>`;
+        } else {
+          return `<span style="display: inline-block; background: #f8f9fa; padding: 4px 8px; border-radius: 4px; margin: 2px 4px 2px 0; font-size: 12px; color: #495057;"><strong>${name}:</strong> ${value}</span>`;
+        }
+      });
+
+      return variantStrings.join('');
+    } catch (error) {
+      console.error('Error formatting variants for email:', error);
+      return '';
+    }
+  }
+
+  // Format price breakdown for email
+  private formatPriceBreakdown(item: any): string {
+    const basePrice = item.base_price || 0;
+    const unitPrice = item.unit_price || item.price || 0;
+    const variantAdjustment = unitPrice - basePrice;
+
+    if (variantAdjustment > 0 && basePrice > 0) {
+      return `
+        <div style="font-size: 12px; color: #6c757d; margin-top: 8px;">
+          <div>Base Price: GH₵${basePrice.toFixed(2)}</div>
+          <div style="color: #28a745;">Variant Upgrades: +GH₵${variantAdjustment.toFixed(2)}</div>
+          <div style="border-top: 1px solid #e0e0e0; padding-top: 4px; margin-top: 4px; font-weight: bold; color: #1A1A1A;">Unit Price: GH₵${unitPrice.toFixed(2)}</div>
+        </div>
+      `;
+    } else {
+      return `<div style="font-size: 12px; color: #6c757d; margin-top: 8px;">Unit Price: GH₵${unitPrice.toFixed(2)}</div>`;
+    }
   }
 
   private normalizeImageUrl(imageUrl?: string | null): string {

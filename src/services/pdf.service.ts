@@ -251,14 +251,64 @@ class PDFService {
     let currentY = tableY + 25;
     items.forEach((item: any) => {
       const itemTotal = item.total_price || item.subtotal || (item.unit_price * item.quantity);
+      const productName = item.product_name || 'Unknown Product';
+      
+      // Format variants for PDF
+      const variantText = this.formatVariantsForPDF(item.selected_variants);
+      const fullProductName = variantText ? `${productName}\n${variantText}` : productName;
+      
       doc.fillColor('#1A1A1A')
-         .text(item.product_name || 'Unknown Product', 50, currentY)
+         .text(fullProductName, 50, currentY, { width: 240 })
          .text((item.quantity || 0).toString(), 300, currentY)
          .text(`GHS ${(item.unit_price || 0).toFixed(2)}`, 350, currentY)
          .text(`GHS ${itemTotal.toFixed(2)}`, 450, currentY);
       
-      currentY += 20;
+      // Add extra space if variants are shown
+      currentY += variantText ? 35 : 20;
     });
+  }
+
+  // Format variants for PDF display
+  private formatVariantsForPDF(selectedVariants: any): string {
+    if (!selectedVariants || typeof selectedVariants !== 'object') {
+      return '';
+    }
+
+    try {
+      let variants: any[] = [];
+      
+      if (Array.isArray(selectedVariants)) {
+        variants = selectedVariants;
+      } else if (typeof selectedVariants === 'string') {
+        try {
+          const parsed = JSON.parse(selectedVariants);
+          variants = Array.isArray(parsed) ? parsed : [parsed];
+        } catch {
+          return '';
+        }
+      } else {
+        variants = Object.values(selectedVariants).filter(v => v && typeof v === 'object');
+      }
+
+      if (variants.length === 0) return '';
+
+      const variantStrings = variants.map(variant => {
+        const name = variant.attribute_name || variant.name || 'Option';
+        const value = variant.option_value || variant.value || variant.label || 'Selected';
+        const price = variant.price_modifier || variant.price_adjustment || 0;
+        
+        if (price > 0) {
+          return `  • ${name}: ${value} (+GHS ${price.toFixed(2)})`;
+        } else {
+          return `  • ${name}: ${value}`;
+        }
+      });
+
+      return variantStrings.join('\n');
+    } catch (error) {
+      console.error('Error formatting variants for PDF:', error);
+      return '';
+    }
   }
 
   private addOrderSummary(doc: any, orderData: OrderData) {
